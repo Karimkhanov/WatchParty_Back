@@ -1,36 +1,56 @@
-// src/routes/authRoutes.js
 const express = require("express")
 const router = express.Router()
+const multer = require("multer")
+const path = require("path")
 
-// Импортируем контроллер аутентификации
-const { register, login, getProfile, updateProfile, changePassword } = require("../controllers/authController")
+const {
+  register,
+  login,
+  getProfile,
+  updateProfile,
+  changePassword,
+  uploadProfilePicture, // <-- Импорт новой функции
+} = require("../controllers/authController")
 
-// Импортируем middleware для проверки токена (для защищенных роутов)
 const { authenticateToken } = require("../middleware/auth")
 
-/**
- * @swagger
- * tags:
- *   name: Authentication
- *   description: User registration, login, and profile management
- */
+// Настройка Multer для сохранения файлов в папку /uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/")
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9)
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname))
+  },
+})
 
-// Маршрут для регистрации нового пользователя
-// POST /api/auth/register
+// Middleware для обработки загрузки одного файла с именем 'profilePicture'
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // Ограничение 5MB
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true)
+    } else {
+      cb(new Error("Only image files are allowed!"), false)
+    }
+  },
+})
+
+// Стандартные маршруты
 router.post("/register", register)
-
-// Маршрут для входа пользователя в систему
-// POST /api/auth/login
 router.post("/login", login)
-
-// Маршрут для получения профиля текущего пользователя (защищенный)
-// GET /api/auth/profile
 router.get("/profile", authenticateToken, getProfile)
-
-// PUT /api/auth/profile
 router.put("/profile", authenticateToken, updateProfile)
-
-// PUT /api/auth/change-password
 router.put("/change-password", authenticateToken, changePassword)
+
+// НОВЫЙ МАРШРУТ для загрузки аватара
+router.post(
+  "/upload-profile-picture",
+  authenticateToken,
+  upload.single("profilePicture"),
+  uploadProfilePicture
+)
 
 module.exports = router

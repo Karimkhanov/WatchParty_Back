@@ -1,5 +1,6 @@
 const express = require("express")
 const cors = require("cors")
+const path = require("path") // <-- Убедитесь, что эта строка есть
 const swaggerUi = require("swagger-ui-express")
 require("dotenv").config()
 
@@ -19,6 +20,9 @@ const PORT = process.env.PORT || 5000
 app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:5173" }))
 app.use(express.json())
 app.use(requestLogger)
+
+// <-- Эта строка очень важна для отображения аватаров
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")))
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec))
 
