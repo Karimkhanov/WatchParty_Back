@@ -7,6 +7,7 @@ const movieController = require("../controllers/movieController")
 
 // Импортируем middleware для проверки токена
 const { authenticateToken } = require("../middleware/auth")
+const { cacheMiddleware, cacheKeyGenerators, invalidateCache } = require("../middleware/cache")
 
 /**
  * @swagger
@@ -38,7 +39,7 @@ const { authenticateToken } = require("../middleware/auth")
  *       200:
  *         description: List of movies with pagination
  */
-router.get("/", movieController.getAllMovies)
+router.get("/", cacheMiddleware(300, cacheKeyGenerators.movies), movieController.getAllMovies)
 
 /**
  * @swagger
@@ -58,7 +59,7 @@ router.get("/", movieController.getAllMovies)
  *       404:
  *         description: Movie not found
  */
-router.get("/:id", movieController.getMovieById)
+router.get("/:id", cacheMiddleware(300, cacheKeyGenerators.movieById), movieController.getMovieById)
 
 // === Защищенные маршруты (требуется JWT токен) ===
 
@@ -97,7 +98,7 @@ router.get("/:id", movieController.getMovieById)
  *       401:
  *         description: Authentication required
  */
-router.post("/", authenticateToken, movieController.createMovie)
+router.post("/", authenticateToken, invalidateCache('cache:movies:*'), movieController.createMovie)
 
 /**
  * @swagger
@@ -137,7 +138,7 @@ router.post("/", authenticateToken, movieController.createMovie)
  *       404:
  *         description: Movie not found
  */
-router.put("/:id", authenticateToken, movieController.updateMovie)
+router.put("/:id", authenticateToken, invalidateCache('cache:movies:*', req => `cache:movie:${req.params.id}`), movieController.updateMovie)
 
 /**
  * @swagger
@@ -159,7 +160,7 @@ router.put("/:id", authenticateToken, movieController.updateMovie)
  *       404:
  *         description: Movie not found
  */
-router.delete("/:id", authenticateToken, movieController.deleteMovie)
+router.delete("/:id", authenticateToken, invalidateCache('cache:movies:*', req => `cache:movie:${req.params.id}`), movieController.deleteMovie)
 
 // ЭКСПОРТИРУЕМ ГОТОВЫЙ РОУТЕР
 module.exports = router

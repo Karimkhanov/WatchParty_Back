@@ -2,6 +2,7 @@ const express = require("express")
 const router = express.Router()
 const chatController = require("../controllers/chatController")
 const optionalAuth = require("../middleware/optionalAuth")
+const { cacheMiddleware, cacheKeyGenerators, invalidateCache } = require("../middleware/cache")
 
 /**
  * @swagger
@@ -26,7 +27,7 @@ const optionalAuth = require("../middleware/optionalAuth")
  *       200:
  *         description: List of messages
  */
-router.get("/:roomId/messages", optionalAuth, chatController.getMessages)
+router.get("/:roomId/messages", optionalAuth, cacheMiddleware(60, cacheKeyGenerators.chatMessages), chatController.getMessages)
 
 /**
  * @swagger
@@ -59,6 +60,6 @@ router.get("/:roomId/messages", optionalAuth, chatController.getMessages)
  *       400:
  *         description: Message cannot be empty
  */
-router.post("/:roomId/messages", optionalAuth, chatController.sendMessage)
+router.post("/:roomId/messages", optionalAuth, invalidateCache(req => `cache:chat:${req.params.roomId}:*`), chatController.sendMessage)
 
 module.exports = router

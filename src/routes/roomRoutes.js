@@ -3,6 +3,7 @@ const router = express.Router()
 const roomController = require("../controllers/roomController")
 const optionalAuth = require("../middleware/optionalAuth")
 const { authenticateToken } = require("../middleware/auth")
+const { cacheMiddleware, cacheKeyGenerators, invalidateCache } = require("../middleware/cache")
 
 /**
  * @swagger
@@ -21,7 +22,7 @@ const { authenticateToken } = require("../middleware/auth")
  *       200:
  *         description: List of all rooms
  */
-router.get("/", optionalAuth, roomController.getAllRooms)
+router.get("/", optionalAuth, cacheMiddleware(300, cacheKeyGenerators.rooms), roomController.getAllRooms)
 
 /**
  * @swagger
@@ -41,7 +42,7 @@ router.get("/", optionalAuth, roomController.getAllRooms)
  *       404:
  *         description: Room not found
  */
-router.get("/:id", optionalAuth, roomController.getRoomById)
+router.get("/:id", optionalAuth, cacheMiddleware(300, cacheKeyGenerators.roomById), roomController.getRoomById)
 
 /**
  * @swagger
@@ -77,7 +78,7 @@ router.get("/:id", optionalAuth, roomController.getRoomById)
  *       401:
  *         description: Authentication required
  */
-router.post("/", authenticateToken, roomController.createRoom)
+router.post("/", authenticateToken, invalidateCache('cache:rooms:*'), roomController.createRoom)
 
 /**
  * @swagger
@@ -118,7 +119,7 @@ router.post("/", authenticateToken, roomController.createRoom)
  *       404:
  *         description: Room not found
  */
-router.put("/:id", authenticateToken, roomController.updateRoom)
+router.put("/:id", authenticateToken, invalidateCache('cache:rooms:*', req => `cache:room:${req.params.id}`), roomController.updateRoom)
 
 /**
  * @swagger
@@ -142,7 +143,7 @@ router.put("/:id", authenticateToken, roomController.updateRoom)
  *       404:
  *         description: Room not found
  */
-router.delete("/:id", authenticateToken, roomController.deleteRoom)
+router.delete("/:id", authenticateToken, invalidateCache('cache:rooms:*', req => `cache:room:${req.params.id}`), roomController.deleteRoom)
 
 /**
  * @swagger
@@ -170,7 +171,7 @@ router.delete("/:id", authenticateToken, roomController.deleteRoom)
  *       404:
  *         description: Room not found
  */
-router.post("/:id/join", optionalAuth, roomController.joinRoom)
+router.post("/:id/join", optionalAuth, invalidateCache(req => `cache:room:${req.params.id}`, 'cache:rooms:*'), roomController.joinRoom)
 
 /**
  * @swagger
@@ -188,6 +189,6 @@ router.post("/:id/join", optionalAuth, roomController.joinRoom)
  *       200:
  *         description: Left room successfully
  */
-router.post("/:id/leave", optionalAuth, roomController.leaveRoom)
+router.post("/:id/leave", optionalAuth, invalidateCache(req => `cache:room:${req.params.id}`, 'cache:rooms:*'), roomController.leaveRoom)
 
 module.exports = router
