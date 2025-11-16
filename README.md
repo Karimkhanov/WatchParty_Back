@@ -235,9 +235,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:5000/api/queues/stat
 
 ---
 
-## 📝 License
 
-This project is licensed under the ISC License.
 
 ## 👨‍💻 Author
 
