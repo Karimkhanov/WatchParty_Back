@@ -245,6 +245,56 @@ Developed for the WatchParty collaborative viewing platform.
 
 Contributions, issues, and feature requests are welcome!
 
+Asked Questions:
+
+1. Horizontal vs. vertical scaling in the context of caching.
+*Vertical scaling (Scale Up):* A server’s processing capacity can be improved by adding more RAM to the server or a more powerful CPU.
+Scaling horizontally (Scale Out), adding the number of parallel running servers (cluster).
+
+With vertical scaling, the cache can be held in the RAM of the server. With horizontal scaling, the above points cannot be achieved since every server contains RAM of its own. Hence, a distributed cache (like Redis) needs to be used in horizontal scaling.
+
+Use Case: 
+Suppose you have three instances running your server.js (Horizontal Scaling). A person logged in to server number 1 would not be recognized in server number 2 without a common session storage solution (Redis).
+
+
+2. What is the risk of background tasks in case of failure of a message queueing system?
+The biggest risk would be the loss of the data (or tasks). If the queue (Redis) fails before the execution of the task or before the completion of the task to disk, the task would be lost forever. There would also be a risk of being caught in the ‘processing’ status forever.
+
+Use Case: 
+A person has registered. The message ‘Send confirmation email’ has been sent to the Redis server. Now the Redis server has crashed. The person will never receive that particular email. They would also be unable to activate their account.
+
+
+3. Why Idempotence matters when tasks are retried.
+
+Idempotence refers to the capability of a given task to produce the same output when executed multiple times. In the context of a queue system, many tasks are retried following a network hiccup. A non-idempotent task may produce repeats.
+
+Example: A queue attempts the processing of “Deduct money for subscription.” The server performs the successful deduction of the money but fails to immediately respond to the “Done” message due to a network outage. The queue misinterpreting the uncompleted action re-submits the processing. In the absence of a special transaction ID for idempotency purposes, the customer pays twice.
+
+4. Which would be more difficult to maintain in a big system, code or documentation? Why?
+Documentation is more difficult to maintain.
+
+Code will neither execute nor produce the correct output if the code breaks. 
+Documentation may go outdated, but the system will keep running. Programmers keep modifying the logic of the code without updating the description in Swagger or the README.
+
+Use Case: 
+Now you have altered the login URL to include a mandatory captcha field. Your code operates in a different manner. But if not shown in the docs, the frontend developer would transmit the old information and would receive errors without recognizing 
+the reason.
+
+5. List the advantages and disadvantages of the process of writing README documents manually versus auto-generating documents.
+   
+Manual writing (README)
+Cons: There may be a lack of clarity in ‘Why’, the explanation of the ‘Why’ process.
+Cons: Becomes outdated very fast, needs discipline, room for mistakes.
+
+Automatic generation (Swagger/OpenAPI)
+Cons: There aren’t many downsides to Test-Driven Development in general. Maybe one negative point would be that DSLs may involve higher costs. Test-Driven Development provides more pros than
+Cons: ‘Dry’ information. Illustrates ‘how’ to invoke a method but may not always elucidate the business rationale between methods.
+
+6. How does documentation help when onboarding new developers to the team?
+Documentation reduces the time-to-value of a new employee.
+It works like a ‘map of the terrain,’ eliminating the need for senior staff to verbally explain how to launch a project and where the database is located.
+Use Case: A new junior joins the WatchParty project. Instead of spending half the day asking you questions like ‘How do I start the server?’ and ‘What's the database password?’, they open *documentation*, copy the commands, start Docker, and are ready to write code in 15 minutes.
+
 ---
 
 **Happy coding! 🎉**
