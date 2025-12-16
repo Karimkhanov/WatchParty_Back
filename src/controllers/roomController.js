@@ -1,4 +1,3 @@
-// src/controllers/roomController.js
 const Room = require("../models/Room")
 const logger = require("../config/logger")
 
@@ -47,10 +46,10 @@ exports.createRoom = async (req, res) => {
       video_url,
       video_type,
       thumbnail_url,
-      creator_id: req.user.id, // ИСПРАВЛЕНО
+      creator_id: req.user.id,
     })
 
-    await Room.addParticipant(room.id, req.user.id) // ИСПРАВЛЕНО
+    await Room.addParticipant(room.id, req.user.id)
 
     res.status(201).json({ success: true, data: room })
   } catch (error) {
@@ -72,8 +71,9 @@ exports.updateRoom = async (req, res) => {
       return res.status(404).json({ success: false, message: "Room not found" })
     }
 
-    if (room.creator_id !== req.user.id) { // ИСПРАВЛЕНО
-      return res.status(403).json({ success: false, message: "Only room creator can update the room" })
+    // ИЗМЕНЕНИЕ: Админ тоже может обновлять комнату
+    if (room.creator_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: "Only room creator or admin can update the room" })
     }
 
     const { title, description, video_url, video_type, thumbnail_url } = req.body
@@ -88,6 +88,12 @@ exports.updateRoom = async (req, res) => {
 
 exports.deleteRoom = async (req, res) => {
   try {
+    // ЛОГИ ДЛЯ ОТЛАДКИ (Потом можно убрать)
+    console.log("-------------------------------------------------");
+    console.log("🛑 DEBUG DELETE ROOM:");
+    console.log("👤 User ID form Token:", req.user.id);
+    console.log("👑 User Role from Token:", req.user.role); // <--- Тут должно быть 'admin'
+    
     if (req.isGuest) {
       return res.status(401).json({ success: false, message: "Authentication required" })
     }
@@ -98,12 +104,23 @@ exports.deleteRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({ success: false, message: "Room not found" })
     }
+    
+    console.log("🏠 Room Creator ID:", room.creator_id);
+    
+    // Проверка прав
+    const isCreator = room.creator_id === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    
+    console.log(`🔍 Check: Is Creator? ${isCreator} | Is Admin? ${isAdmin}`);
 
-    if (room.creator_id !== req.user.id) { // ИСПРАВЛЕНО
-      return res.status(403).json({ success: false, message: "Only room creator can delete the room" })
+    // ИЗМЕНЕНИЕ: Админ может удалить любую комнату (Модерация)
+    if (!isCreator && !isAdmin) {
+      console.log("❌ ACCESS DENIED");
+      return res.status(403).json({ success: false, message: "Only room creator or admin can delete the room" })
     }
 
     await Room.delete(id)
+    logger.info(`Room ${id} deleted by user ${req.user.id} (Role: ${req.user.role})`)
     res.json({ success: true, message: "Room deleted successfully" })
   } catch (error) {
     logger.error("Error deleting room:", error)
@@ -127,7 +144,7 @@ exports.joinRoom = async (req, res) => {
 
     const participant = await Room.addParticipant(
       id,
-      req.isGuest ? null : req.user.id, // ИСПРАВЛЕНО
+      req.isGuest ? null : req.user.id,
       req.isGuest ? guest_name : null,
     )
 
@@ -145,7 +162,7 @@ exports.leaveRoom = async (req, res) => {
     }
 
     const { id } = req.params
-    await Room.removeParticipant(id, req.user.id) // ИСПРАВЛЕНО
+    await Room.removeParticipant(id, req.user.id)
     res.json({ success: true, message: "Left room successfully" })
   } catch (error) {
     logger.error("Error leaving room:", error)

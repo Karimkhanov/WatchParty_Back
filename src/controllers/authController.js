@@ -9,8 +9,13 @@ const { sendWelcomeEmail, sendPasswordResetEmail } = require("../services/emailS
 const { addJob } = require("../config/queue")
 const { cache } = require("../config/redis")
 
-const generateToken = (userId, email) => {
-  return jwt.sign({ id: userId, email }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE || "7d" })
+// ИЗМЕНЕНИЕ: Добавлен аргумент role в генерацию токена
+const generateToken = (userId, email, role) => {
+  return jwt.sign(
+    { id: userId, email, role }, // Зашиваем роль в payload
+    process.env.JWT_SECRET, 
+    { expiresIn: process.env.JWT_EXPIRE || "7d" }
+  )
 }
 
 /**
@@ -44,6 +49,9 @@ const generateToken = (userId, email) => {
  */
 const register = async (req, res) => {
   try {
+
+    console.log("DEBUG BODY:", JSON.stringify(req.body, null, 2)); 
+    
     const { email, password, username, name } = req.body
     logger.info(`Registration attempt for email: ${email}`)
 
@@ -55,13 +63,16 @@ const register = async (req, res) => {
     const salt = await bcrypt.genSalt(10)
     const hashedPassword = await bcrypt.hash(password, salt)
     
-    // ИСПРАВЛЕНО: Код соответствует вашей таблице users с полем role по умолчанию
+    // Создаем пользователя (role по умолчанию 'user' из БД)
     const newUser = await pool.query(
       "INSERT INTO users (email, username, password, name) VALUES ($1, $2, $3, $4) RETURNING id, email, username, name, created_at, role",
       [email, username, hashedPassword, name || username],
     )
     const user = newUser.rows[0]
-    const token = generateToken(user.id, user.email)
+    
+    // ИЗМЕНЕНИЕ: Передаем роль в генератор токена
+    const token = generateToken(user.id, user.email, user.role)
+    
     logger.info(`User registered successfully: ${user.email}`)
 
     // Send welcome email asynchronously
@@ -72,7 +83,7 @@ const register = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "User registered successfully",
-      data: { user: { id: user.id, email: user.email, username: user.username, name: user.name }, token },
+      data: { user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role }, token },
     })
   } catch (error) {
     logger.error("Register error:", error)
@@ -120,7 +131,9 @@ const login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid email or password" })
     }
 
-    const token = generateToken(user.id, user.email)
+    // ИЗМЕНЕНИЕ: Передаем роль в генератор токена
+    const token = generateToken(user.id, user.email, user.role)
+    
     logger.info(`User logged in successfully: ${user.email}`)
 
     res.status(200).json({
@@ -128,8 +141,14 @@ const login = async (req, res) => {
       message: "Login successful",
       data: {
         user: {
-          id: user.id, email: user.email, username: user.username, name: user.name,
-          bio: user.bio, profile_picture: user.profile_picture, phone_number: user.phone_number,
+          id: user.id, 
+          email: user.email, 
+          username: user.username, 
+          name: user.name,
+          bio: user.bio, 
+          profile_picture: user.profile_picture, 
+          phone_number: user.phone_number,
+          role: user.role // Возвращаем роль на фронт
         },
         token,
       },
@@ -185,32 +204,9 @@ const getProfile = async (req, res) => {
   }
 }
 
-/**
- * @swagger
- * /api/auth/profile:
- *   put:
- *     summary: Update current user profile (text fields)
- *     tags: [Authentication]
- *     security: [{ bearerAuth: [] }]
- *     description: Send only the fields you want to update.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name: { type: string }
- *               username: { type: string }
- *               email: { type: string, format: email }
- *               bio: { type: string }
- *               phone_number: { type: string }
- *     responses:
- *       200: { description: "Profile updated successfully" }
- *       400: { description: "Validation error or no fields to update" }
- *       401: { description: "Unauthorized" }
- *       500: { description: "Server error" }
- */
+// ... Остальные методы (updateProfile, uploadProfilePicture, changePassword, forgotPassword, resetPassword) оставляем без изменений, так как роль там не влияет на логику ...
+// Просто скопируй старые версии этих функций сюда.
+
 const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id
@@ -226,8 +222,6 @@ const updateProfile = async (req, res) => {
       }
     }
 
-    // ИСПРАВЛЕНО: Эта динамическая логика теперь 100% корректно обрабатывает
-    // данные от любой формы, обновляя только те поля, которые были отправлены.
     const updates = []
     const values = []
     let paramCount = 1
@@ -258,29 +252,6 @@ const updateProfile = async (req, res) => {
   }
 }
 
-/**
- * @swagger
- * /api/auth/upload-profile-picture:
- *   post:
- *     summary: Upload or update user profile picture
- *     tags: [Authentication]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               profilePicture:
- *                 type: string
- *                 format: binary
- *                 description: The image file to upload (max 5MB).
- *     responses:
- *       200: { description: "Profile picture updated successfully" }
- *       400: { description: "No file uploaded or invalid file type" }
- *       500: { description: "Server error" }
- */
 const uploadProfilePicture = async (req, res) => {
   try {
     const userId = req.user.id
@@ -327,36 +298,12 @@ const uploadProfilePicture = async (req, res) => {
   } catch (error) {
     logger.error("Upload profile picture error:", error)
     if (req.file) {
-      // Если произошла ошибка в БД, удаляем только что загруженный файл
       fs.unlinkSync(req.file.path)
     }
     res.status(500).json({ success: false, message: "Server error" })
   }
 }
 
-/**
- * @swagger
- * /api/auth/change-password:
- *   put:
- *     summary: Change user password
- *     tags: [Authentication]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [currentPassword, newPassword]
- *             properties:
- *               currentPassword: { type: string }
- *               newPassword: { type: string, minLength: 6 }
- *     responses:
- *       200: { description: "Password changed successfully" }
- *       400: { description: "Invalid current password or new password too short" }
- *       401: { description: "Unauthorized" }
- *       500: { description: "Server error" }
- */
 const changePassword = async (req, res) => {
   try {
     const userId = req.user.id
@@ -392,26 +339,6 @@ const changePassword = async (req, res) => {
   }
 }
 
-/**
- * @swagger
- * /api/auth/forgot-password:
- *   post:
- *     summary: Request password reset
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [email]
- *             properties:
- *               email: { type: string, format: email }
- *     responses:
- *       200: { description: "Password reset email sent" }
- *       404: { description: "User not found" }
- *       500: { description: "Server error" }
- */
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body
@@ -419,23 +346,19 @@ const forgotPassword = async (req, res) => {
 
     const userResult = await pool.query("SELECT id, email, username FROM users WHERE email = $1", [email])
     if (userResult.rows.length === 0) {
-      // Security: Don't reveal whether user exists
       return res.status(200).json({ success: true, message: "If an account exists with this email, a password reset link has been sent" })
     }
 
     const user = userResult.rows[0]
 
-    // Generate reset token (valid for 1 hour)
     const resetToken = crypto.randomBytes(32).toString('hex')
-    const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+    const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000)
 
-    // Store token in database
     await pool.query(
       "UPDATE users SET password_reset_token = $1, password_reset_expires = $2 WHERE id = $3",
       [resetToken, resetTokenExpires, user.id]
     )
 
-    // Send password reset email
     await sendPasswordResetEmail(user.email, resetToken, user.username)
 
     logger.info(`Password reset email sent to: ${email}`)
@@ -449,27 +372,6 @@ const forgotPassword = async (req, res) => {
   }
 }
 
-/**
- * @swagger
- * /api/auth/reset-password:
- *   post:
- *     summary: Reset password using token
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [token, newPassword]
- *             properties:
- *               token: { type: string }
- *               newPassword: { type: string, minLength: 6 }
- *     responses:
- *       200: { description: "Password reset successfully" }
- *       400: { description: "Invalid or expired token" }
- *       500: { description: "Server error" }
- */
 const resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body
@@ -479,7 +381,6 @@ const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "New password must be at least 6 characters long" })
     }
 
-    // Find user with valid token
     const userResult = await pool.query(
       "SELECT id, email, username FROM users WHERE password_reset_token = $1 AND password_reset_expires > NOW()",
       [token]
@@ -491,11 +392,9 @@ const resetPassword = async (req, res) => {
 
     const user = userResult.rows[0]
 
-    // Hash new password
     const salt = await bcrypt.genSalt(10)
     const hashedPassword = await bcrypt.hash(newPassword, salt)
 
-    // Update password and clear reset token
     await pool.query(
       "UPDATE users SET password = $1, password_reset_token = NULL, password_reset_expires = NULL WHERE id = $2",
       [hashedPassword, user.id]
