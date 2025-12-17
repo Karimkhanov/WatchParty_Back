@@ -1,0 +1,39 @@
+name: WatchParty Backend CI/CD
+
+# Запускать при пуше в main или master
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # УДАЛИЛИ working-directory, так как мы уже в корне репозитория
+
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+    # 1. Скачиваем код
+    - uses: actions/checkout@v4
+
+    # 2. Настраиваем Node.js
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        # УДАЛИЛИ префикс папки, оставили просто package-lock.json
+        cache-dependency-path: package-lock.json
+
+    # 3. Устанавливаем зависимости
+    - name: Install Dependencies
+      run: npm ci
+
+    # 4. Запускаем тесты
+    - name: Run Tests
+      run: npm test
