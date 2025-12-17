@@ -1,5 +1,6 @@
 const Room = require("../models/Room")
 const logger = require("../config/logger")
+const { addJob } = require("../config/queue");
 
 exports.getAllRooms = async (req, res) => {
   try {
@@ -51,6 +52,17 @@ exports.createRoom = async (req, res) => {
 
     await Room.addParticipant(room.id, req.user.id)
 
+    // Отправляем событие в микросервис аналитики 
+    addJob('analytics', 'room-created-event', {
+      event: 'ROOM_CREATED',
+      timestamp: Date.now(),
+      data: {
+        roomId: room.id,
+        roomTitle: room.title,
+        creatorId: req.user.id
+      }
+    }).catch(err => logger.error('Failed to send analytics event:', err));
+
     res.status(201).json({ success: true, data: room })
   } catch (error) {
     logger.error("Error creating room:", error)
@@ -71,7 +83,7 @@ exports.updateRoom = async (req, res) => {
       return res.status(404).json({ success: false, message: "Room not found" })
     }
 
-    // ИЗМЕНЕНИЕ: Админ тоже может обновлять комнату
+    // Админ тоже может обновлять комнату
     if (room.creator_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: "Only room creator or admin can update the room" })
     }
@@ -88,11 +100,11 @@ exports.updateRoom = async (req, res) => {
 
 exports.deleteRoom = async (req, res) => {
   try {
-    // ЛОГИ ДЛЯ ОТЛАДКИ (Потом можно убрать)
+    // ЛОГИ ДЛЯ ОТЛАДКИ 
     console.log("-------------------------------------------------");
     console.log("🛑 DEBUG DELETE ROOM:");
     console.log("👤 User ID form Token:", req.user.id);
-    console.log("👑 User Role from Token:", req.user.role); // <--- Тут должно быть 'admin'
+    console.log("👑 User Role from Token:", req.user.role); 
     
     if (req.isGuest) {
       return res.status(401).json({ success: false, message: "Authentication required" })
@@ -113,7 +125,7 @@ exports.deleteRoom = async (req, res) => {
     
     console.log(`🔍 Check: Is Creator? ${isCreator} | Is Admin? ${isAdmin}`);
 
-    // ИЗМЕНЕНИЕ: Админ может удалить любую комнату (Модерация)
+    // Админ может удалить любую комнату (Модерация)
     if (!isCreator && !isAdmin) {
       console.log("❌ ACCESS DENIED");
       return res.status(403).json({ success: false, message: "Only room creator or admin can delete the room" })

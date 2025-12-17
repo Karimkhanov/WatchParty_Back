@@ -16,6 +16,9 @@ const queues = {
   imageProcessing: new Queue('image-processing', { redis: redisOptions }),
   roomCleanup: new Queue('room-cleanup', { redis: redisOptions }),
   reports: new Queue('reports', { redis: redisOptions }),
+  
+  // Очередь для микросервиса аналитики !!!
+  analytics: new Queue('analytics', { redis: redisOptions }),
 };
 
 // Queue event handlers for monitoring

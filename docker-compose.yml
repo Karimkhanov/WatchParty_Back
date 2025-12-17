@@ -73,6 +73,17 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
     depends_on:
       - prometheus
+  
+    # --- Microservice: Analytics ---
+  analytics:
+    build: ../W2G_Analytics  # Путь к папке соседнего сервиса
+    container_name: w2g_analytics
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
 
 volumes:
   pgdata:
