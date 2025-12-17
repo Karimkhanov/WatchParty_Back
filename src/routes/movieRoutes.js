@@ -6,6 +6,7 @@ const {
   createMovie,
   updateMovie,
   deleteMovie,
+  getMovieRating 
 } = require("../controllers/movieController")
 const { authenticateToken, authorizeRoles } = require("../middleware/auth")
 const { validate } = require("../middleware/validator") // Предполагаю, что у тебя есть валидаторы для фильмов, если нет - можно убрать
@@ -14,6 +15,7 @@ const { cacheMiddleware } = require("../middleware/cache") // Если испо�
 // ПУБЛИЧНЫЕ маршруты (доступны всем: гостям, юзерам, админам)
 router.get("/", cacheMiddleware(300), getAllMovies) // Кэш на 5 минут
 router.get("/:id", cacheMiddleware(300), getMovieById)
+router.get("/:id/rating", getMovieRating);
 
 // ЗАЩИЩЕННЫЕ маршруты (ТОЛЬКО ДЛЯ АДМИНА)
 // Валидация прав: проверяем токен, а затем роль 'admin'

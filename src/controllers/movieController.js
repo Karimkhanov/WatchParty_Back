@@ -1,6 +1,7 @@
 // src/controllers/movieController.js
 const pool = require("../config/database")
 const logger = require("../config/logger")
+const ratingBreaker = require("../services/ratingService");
 
 const getAllMovies = async (req, res) => {
   try {
@@ -131,6 +132,28 @@ const deleteMovie = async (req, res) => {
   }
 }
 
+
+// Получение рейтинга через Circuit Breaker
+
+const getMovieRating = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Вызываем не функцию напрямую, а через breaker.fire()
+    const result = await ratingBreaker.fire(id);
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error("Circuit Breaker Error:", error);
+    res.status(500).json({ success: false, message: "Internal error" });
+  }
+}
+
+
+
 // ЭКСПОРТИРУЕМ ВСЕ ФУНКЦИИ В ОДНОМ ОБЪЕКТЕ
 module.exports = {
   getAllMovies,
@@ -138,4 +161,5 @@ module.exports = {
   createMovie,
   updateMovie,
   deleteMovie,
+  getMovieRating,
 }
