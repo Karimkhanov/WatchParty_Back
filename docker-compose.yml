@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # База данных внутри Docker
+  postgres:
+    image: postgres:14-alpine
+    container_name: w2g_postgres
+    restart: always
+    ports:
+      - "${DB_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Монтируем наш единый скрипт инициализации
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Redis внутри Docker
+  redis:
+    image: redis:7-alpine
+    container_name: w2g_redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redisdata:/data
+
+  # Твой Бэкенд
+  api:
+    build: .
+    container_name: w2g_backend
+    restart: unless-stopped
+    ports:
+      - "${PORT}:${PORT}"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    environment:
+      # Переопределяем хосты для внутренней сети Docker
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - ./src:/usr/src/app/src
+      - ./uploads:/usr/src/app/uploads
+      - ./logs:/usr/src/app/logs
+      - /usr/src/app/node_modules
+
+volumes:
+  pgdata:
+  redisdata:
