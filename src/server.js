@@ -4,6 +4,9 @@ const path = require("path")
 const swaggerUi = require("swagger-ui-express")
 require("dotenv").config()
 
+// Импорт метрик
+const { register, httpRequestDurationMicroseconds } = require("./config/metrics")
+
 require("./config/database")
 
 // Initialize Redis and background workers
@@ -31,10 +34,26 @@ app.use(cors({
 
 // 2. Парсинг JSON (с увеличенным лимитом)
 app.use(express.json({ limit: "10mb" }))
-
-// 3. !!! ВАЖНОЕ ИСПРАВЛЕНИЕ: Парсинг URL-encoded данных (форм) !!!
-// Это часто решает проблему "undefined" при регистрации
 app.use(express.urlencoded({ extended: true, limit: "10mb" }))
+
+// Middleware для сбора метрик, чтобы засекать все запросы
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // Когда запрос завершится...
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000; // перевод в секунды
+    
+    // Не учитываем сам маршрут /metrics и статику, чтобы не засорять графики
+    if (req.path !== '/metrics' && !req.path.startsWith('/uploads')) {
+        httpRequestDurationMicroseconds
+          .labels(req.method, req.path, res.statusCode)
+          .observe(duration);
+    }
+  });
+  
+  next();
+});
 
 // 4. Логгер запросов
 app.use(requestLogger)
@@ -44,6 +63,13 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")))
 
 // 6. Swagger документация
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec))
+
+// Маршрут для Prometheus
+// Prometheus будет стучаться сюда и забирать данные
+app.get('/metrics', async (req, res) => {
+  res.setHeader('Content-Type', register.contentType);
+  res.send(await register.metrics());
+});
 
 // 7. Direct password reset routes (workaround)
 app.post("/api/auth/forgot-password", (req, res, next) => {

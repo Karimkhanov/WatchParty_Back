@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s # Собирать данные каждые 5 секунд (для демо хорошо, в проде обычно 15s)
+
+scrape_configs:
+  - job_name: 'w2g_backend'
+    static_configs:
+      - targets: ['api:5000'] # 'api' - это имя сервиса из docker-compose
