@@ -6,19 +6,35 @@ const {
   createMovie,
   updateMovie,
   deleteMovie,
-  getMovieRating 
+  getMovieRating,
+  rateMovie
 } = require("../controllers/movieController")
 const { authenticateToken, authorizeRoles } = require("../middleware/auth")
-const { validate } = require("../middleware/validator") // Предполагаю, что у тебя есть валидаторы для фильмов, если нет - можно убрать
-const { cacheMiddleware } = require("../middleware/cache") // Если используешь кэш
+const optionalAuth = require("../middleware/optionalAuth") 
+const { cacheMiddleware } = require("../middleware/cache") 
 
-// ПУБЛИЧНЫЕ маршруты (доступны всем: гостям, юзерам, админам)
-router.get("/", cacheMiddleware(300), getAllMovies) // Кэш на 5 минут
-router.get("/:id", cacheMiddleware(300), getMovieById)
+/**
+ * @swagger
+ * tags:
+ *   name: Movies
+ *   description: Movie management API
+ */
+
+
+
+// Список фильмов 
+router.get("/", cacheMiddleware(300), getAllMovies)
+
+// Детали фильма 
+router.get("/:id", optionalAuth, getMovieById)
+
+// Внешний рейтинг
 router.get("/:id/rating", getMovieRating);
 
-// ЗАЩИЩЕННЫЕ маршруты (ТОЛЬКО ДЛЯ АДМИНА)
-// Валидация прав: проверяем токен, а затем роль 'admin'
+// Поставить оценку
+router.post("/:id/rate", authenticateToken, rateMovie);
+
+// Админские функции (Создать)
 router.post(
   "/", 
   authenticateToken, 
@@ -26,6 +42,7 @@ router.post(
   createMovie
 )
 
+// Админские функции (Обновить)
 router.put(
   "/:id", 
   authenticateToken, 
@@ -33,6 +50,7 @@ router.put(
   updateMovie
 )
 
+// Админские функции (Удалить)
 router.delete(
   "/:id", 
   authenticateToken, 

@@ -88,3 +88,32 @@ services:
 volumes:
   pgdata:
   redisdata:
+
+
+# Для PostgreSQL:
+
+# # 1. Заходим внутрь контейнера с базой
+# docker exec -it w2g_postgres psql -U postgres -d watchparty_db
+
+# Когда увидишь watchparty_db=#, ты внутри!
+# Вводи команды:
+# \dt — показать список таблиц (ты должен увидеть users, rooms, movies и т.д.).
+# SELECT * FROM users; — посмотреть пользователей.
+# \q — выход.
+
+
+#---------------------------------------------------------------------------
+
+# Для Redis:
+
+# # 1. Заходим внутрь Redis
+# docker exec -it w2g_redis redis-cli
+
+# # 2. Проверяем ключи
+# KEYS *
+
+#---------------------------------------------------------------------------
+
+# Выдать себе Админку 
+
+# docker exec -it w2g_postgres psql -U postgres -d watchparty_db -c "UPDATE users SET role = 'admin' WHERE email = 'admin@gmail.com';"
