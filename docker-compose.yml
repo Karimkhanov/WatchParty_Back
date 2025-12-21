@@ -27,6 +27,27 @@ services:
     volumes:
       - redisdata:/data
 
+
+# --- ElasticSearch ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.13
+    container_name: w2g_elastic
+    environment:
+      - node.name=w2g_elastic
+      - cluster.name=w2g_cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticdata:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
   # Бэкенд
   api:
     build: .
@@ -37,6 +58,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - elasticsearch
     env_file:
       - .env
     environment:
@@ -44,6 +66,7 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       DB_PORT: 5432
+      ELASTIC_HOST: http://elasticsearch:9200
     volumes:
       - ./src:/usr/src/app/src
       - ./uploads:/usr/src/app/uploads
@@ -88,6 +111,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  elasticdata:
 
 
 # Для PostgreSQL:

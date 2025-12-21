@@ -1,29 +1,23 @@
 const pool = require("../config/database")
 const logger = require("../config/logger")
 const ratingBreaker = require("../services/ratingService")
-const { redis } = require("../config/redis") 
+const { redis } = require("../config/redis")
+const { indexMovie, removeMovie, searchMovies: searchInElastic } = require("../services/elasticService");
 
-// Функция для очистки кэша
 const clearMovieCache = async (movieId = null) => {
   try {
-    // Удаляем кэш списков фильмов (страницы, поиск, фильтры)
     const keys = await redis.keys("cache:/api/movies*");
     if (keys.length > 0) {
       await redis.del(keys);
-      logger.info(`🗑️ Cleared ${keys.length} movie list cache keys`);
     }
-
-    // Если передан ID, удаляем кэш конкретного фильма
     if (movieId) {
       await redis.del(`cache:/api/movies/${movieId}`);
-      logger.info(`🗑️ Cleared cache for movie ${movieId}`);
     }
   } catch (error) {
     logger.error("Error clearing cache:", error);
   }
 };
 
-// Получение всех фильмов
 const getAllMovies = async (req, res) => {
   try {
     const page = Number.parseInt(req.query.page) || 1
@@ -37,11 +31,30 @@ const getAllMovies = async (req, res) => {
     const queryParams = []
     let paramCount = 1
 
+    // Логика поиска через ElasticSearch
     if (search) {
-      // Поиск по названию ИЛИ описанию
-      queryText += ` AND (title ILIKE $${paramCount} OR description ILIKE $${paramCount})`
-      queryParams.push(`%${search}%`)
-      paramCount++
+        // Пытаемся найти ID фильмов через Elastic
+        const elasticIds = await searchInElastic(search);
+
+        if (elasticIds && elasticIds.length > 0) {
+            // Elastic нашел фильмы -> запрашиваем их из БД по ID
+            queryText += ` AND id = ANY($${paramCount})`
+            queryParams.push(elasticIds)
+            paramCount++
+            logger.info(`🔍 ElasticSearch found ${elasticIds.length} movies for query: "${search}"`);
+        } else if (elasticIds === null) {
+            // Elastic недоступен -> Fallback на обычный SQL поиск
+            logger.warn("⚠️ ElasticSearch down, using SQL fallback");
+            queryText += ` AND (title ILIKE $${paramCount} OR description ILIKE $${paramCount})`
+            queryParams.push(`%${search}%`)
+            paramCount++
+        } else {
+            // Elastic доступен, но ничего не нашел -> возвращаем пустоту
+            return res.status(200).json({
+                success: true,
+                data: { movies: [], pagination: { page, limit, total: 0, totalPages: 0 } }
+            })
+        }
     }
 
     if (genre) {
@@ -55,24 +68,7 @@ const getAllMovies = async (req, res) => {
 
     const result = await pool.query(queryText, queryParams)
 
-    // Считаем общее количество (учитывая поиск)
-    let countQuery = `SELECT COUNT(*) FROM movies WHERE 1=1`
-    const countParams = []
-    let countParamCount = 1
-
-    if (search) {
-      countQuery += ` AND (title ILIKE $${countParamCount} OR description ILIKE $${countParamCount})`
-      countParams.push(`%${search}%`)
-      countParamCount++
-    }
-    if (genre) {
-      countQuery += ` AND genre = $${countParamCount}`
-      countParams.push(genre)
-      countParamCount++
-    }
-
-    const countResult = await pool.query(countQuery, countParams)
-    const totalMovies = Number.parseInt(countResult.rows[0].count)
+    const totalMovies = result.rows.length;
 
     res.status(200).json({
       success: true,
@@ -92,7 +88,6 @@ const getAllMovies = async (req, res) => {
   }
 }
 
-// Получение одного фильма
 const getMovieById = async (req, res) => {
   try {
     const { id } = req.params
@@ -132,7 +127,6 @@ const getMovieById = async (req, res) => {
   }
 }
 
-// Создание фильма
 const createMovie = async (req, res) => {
   try {
     const { title, description, poster_url, backdrop_url, video_url, year, genre, duration } = req.body
@@ -145,18 +139,21 @@ const createMovie = async (req, res) => {
       [title, description, poster_url, backdrop_url, video_url, year, genre, duration, userId],
     )
 
-    // Очищаем кэш списка, чтобы новый фильм появился сразу
+    const newMovie = result.rows[0];
+
+    // Добавляем в ElasticSearch (асинхронно)
+    indexMovie(newMovie);
+    
     await clearMovieCache();
 
     logger.info(`Movie created: ${title} by user ${userId}`)
-    res.status(201).json({ success: true, message: "Movie created successfully", data: { movie: result.rows[0] }})
+    res.status(201).json({ success: true, message: "Movie created successfully", data: { movie: newMovie }})
   } catch (error) {
     logger.error("Create movie error:", error)
     res.status(500).json({ success: false, message: "Server error while creating movie" })
   }
 }
 
-// Обновление
 const updateMovie = async (req, res) => {
   try {
     const { id } = req.params
@@ -180,17 +177,20 @@ const updateMovie = async (req, res) => {
 
     if (result.rows.length === 0) return res.status(404).json({message: "Not found"});
 
-    // Очищаем кэш этого фильма и списков
+    const updatedMovie = result.rows[0];
+
+    // Обновляем в ElasticSearch
+    indexMovie(updatedMovie);
+
     await clearMovieCache(id);
 
-    res.status(200).json({ success: true, message: "Movie updated", data: { movie: result.rows[0] }})
+    res.status(200).json({ success: true, message: "Movie updated", data: { movie: updatedMovie }})
   } catch (error) {
     logger.error("Update movie error:", error)
     res.status(500).json({ success: false, message: "Server error" })
   }
 }
 
-// Удаление 
 const deleteMovie = async (req, res) => {
   try {
     const { id } = req.params
@@ -200,7 +200,9 @@ const deleteMovie = async (req, res) => {
       return res.status(404).json({ success: false, message: "Movie not found" })
     }
 
-    // Удаляем кэш, чтобы фильм исчез из списков и поиска
+    // Удаляем из ElasticSearch
+    removeMovie(id);
+
     await clearMovieCache(id);
 
     logger.info(`Movie deleted: ${id}`)
@@ -221,7 +223,6 @@ const getMovieRating = async (req, res) => {
   }
 }
 
-// Оценка фильма 
 const rateMovie = async (req, res) => {
     try {
         const { id } = req.params;
@@ -237,14 +238,12 @@ const rateMovie = async (req, res) => {
             return res.status(400).json({ success: false, message: "Rating must be between 1 and 10" });
         }
 
-        // Upsert оценки (Один юзер - одна оценка на фильм)
         await pool.query(
             `INSERT INTO movie_ratings (user_id, movie_id, rating) VALUES ($1, $2, $3)
              ON CONFLICT (user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating`,
             [userId, id, rating]
         );
 
-        // Пересчет
         const statsResult = await pool.query(
             `SELECT AVG(rating) as average, COUNT(*) as count FROM movie_ratings WHERE movie_id = $1`,
             [id]
@@ -253,13 +252,11 @@ const rateMovie = async (req, res) => {
         const newAverage = parseFloat(statsResult.rows[0].average || 0).toFixed(1);
         const newCount = statsResult.rows[0].count;
 
-        // Обновление фильма
         const updatedMovie = await pool.query(
             `UPDATE movies SET vote_average = $1, vote_count = $2 WHERE id = $3 RETURNING *`,
             [newAverage, newCount, id]
         );
 
-        // Сбрасываем кэш, чтобы новый рейтинг был виден всем
         await clearMovieCache(id);
 
         logger.info(`User ${userId} rated movie ${id} with ${rating}`);
