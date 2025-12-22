@@ -27,29 +27,26 @@ const getAllMovies = async (req, res) => {
     const search = req.query.search || ""
     const genre = req.query.genre || ""
 
-    let queryText = `SELECT * FROM movies WHERE 1=1`
+    let queryText = `SELECT *, COUNT(*) OVER() AS total_count FROM movies WHERE 1=1`
+    
     const queryParams = []
     let paramCount = 1
 
     // Логика поиска через ElasticSearch
     if (search) {
-        // Пытаемся найти ID фильмов через Elastic
         const elasticIds = await searchInElastic(search);
 
         if (elasticIds && elasticIds.length > 0) {
-            // Elastic нашел фильмы -> запрашиваем их из БД по ID
             queryText += ` AND id = ANY($${paramCount})`
             queryParams.push(elasticIds)
             paramCount++
-            logger.info(`🔍 ElasticSearch found ${elasticIds.length} movies for query: "${search}"`);
+            logger.info(`🔍 ElasticSearch found ${elasticIds.length} movies`);
         } else if (elasticIds === null) {
-            // Elastic недоступен -> Fallback на обычный SQL поиск
             logger.warn("⚠️ ElasticSearch down, using SQL fallback");
             queryText += ` AND (title ILIKE $${paramCount} OR description ILIKE $${paramCount})`
             queryParams.push(`%${search}%`)
             paramCount++
         } else {
-            // Elastic доступен, но ничего не нашел -> возвращаем пустоту
             return res.status(200).json({
                 success: true,
                 data: { movies: [], pagination: { page, limit, total: 0, totalPages: 0 } }
@@ -68,7 +65,7 @@ const getAllMovies = async (req, res) => {
 
     const result = await pool.query(queryText, queryParams)
 
-    const totalMovies = result.rows.length;
+    const totalMovies = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     res.status(200).json({
       success: true,
@@ -77,8 +74,8 @@ const getAllMovies = async (req, res) => {
         pagination: {
           page,
           limit,
-          total: totalMovies,
-          totalPages: Math.ceil(totalMovies / limit),
+          total: totalMovies, 
+          totalPages: Math.ceil(totalMovies / limit), 
         },
       },
     })
